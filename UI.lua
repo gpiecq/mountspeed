@@ -145,6 +145,7 @@ local function CreateMainFrame()
     local closeBtn = CreateFrame("Button", nil, mainFrame,
                                  "UIPanelCloseButton")
     closeBtn:SetPoint("TOPRIGHT", -2, -2)
+    closeBtn:SetScript("OnClick", function() mainFrame:Hide() end)
 
     -- Enable checkbox
     enableCB = CreateFrame("CheckButton", "MountSpeedEnableCB", mainFrame,
@@ -312,19 +313,18 @@ local function CreateMinimapButton()
 
     minimapBtn = CreateFrame("Button", "MountSpeedMinimapBtn", Minimap)
     minimapBtn:SetSize(32, 32)
-    minimapBtn:SetFrameStrata("MEDIUM")
-    minimapBtn:SetFrameLevel(8)
+    minimapBtn:SetFrameLevel(Minimap:GetFrameLevel() + 5)
     minimapBtn:EnableMouse(true)
     minimapBtn:SetMovable(true)
     minimapBtn:RegisterForDrag("LeftButton")
     minimapBtn:RegisterForClicks("LeftButtonUp")
     minimapBtn:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
 
-    -- Icon
+    -- Icon (Carrot on a Stick texture)
     local icon = minimapBtn:CreateTexture(nil, "ARTWORK")
     icon:SetSize(20, 20)
     icon:SetPoint("CENTER")
-    icon:SetTexture("Interface\\Icons\\INV_Staff_07")
+    icon:SetTexture(133532)
 
     -- Border overlay
     local border = minimapBtn:CreateTexture(nil, "OVERLAY")
