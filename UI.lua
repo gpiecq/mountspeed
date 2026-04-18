@@ -141,10 +141,10 @@ local function CreateMainFrame()
     title:SetText("MountSpeed")
     title:SetTextColor(0, 0.8, 1)
 
-    -- Close button
-    local closeBtn = CreateFrame("Button", nil, mainFrame,
+    -- Close button (parented to titleBar so it stays above the drag region)
+    local closeBtn = CreateFrame("Button", nil, titleBar,
                                  "UIPanelCloseButton")
-    closeBtn:SetPoint("TOPRIGHT", -2, -2)
+    closeBtn:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", 0, 0)
     closeBtn:SetScript("OnClick", function() mainFrame:Hide() end)
 
     -- Enable checkbox
@@ -301,80 +301,83 @@ end
 ----------------------------------------------------------------------
 local minimapBtn
 
-local function UpdateMinimapPosition(angle)
-    local rad = math.rad(angle or 215)
-    minimapBtn:ClearAllPoints()
-    minimapBtn:SetPoint("CENTER", Minimap, "CENTER",
-                        math.cos(rad) * 80, math.sin(rad) * 80)
-end
-
 local function CreateMinimapButton()
     if minimapBtn then return end
+    if not Minimap then return end
 
-    minimapBtn = CreateFrame("Button", "MountSpeedMinimapBtn", Minimap)
-    minimapBtn:SetSize(32, 32)
-    minimapBtn:SetFrameLevel(Minimap:GetFrameLevel() + 5)
-    minimapBtn:EnableMouse(true)
-    minimapBtn:SetMovable(true)
-    minimapBtn:RegisterForDrag("LeftButton")
-    minimapBtn:RegisterForClicks("LeftButtonUp")
-    minimapBtn:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+    local btn = CreateFrame("Button", "MountSpeedMinimapBtn", Minimap)
+    btn:SetSize(32, 32)
+    btn:SetFrameStrata("MEDIUM")
+    btn:SetFrameLevel(8)
+    btn:SetMovable(true)
+    btn:SetClampedToScreen(true)
 
-    -- Icon (Carrot on a Stick texture)
-    local icon = minimapBtn:CreateTexture(nil, "ARTWORK")
+    -- Border (matches standard minimap tracking buttons)
+    local overlay = btn:CreateTexture(nil, "OVERLAY")
+    overlay:SetSize(53, 53)
+    overlay:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+    overlay:SetPoint("TOPLEFT")
+
+    -- Icon (carrot — using a food icon for visibility)
+    local icon = btn:CreateTexture(nil, "BACKGROUND")
     icon:SetSize(20, 20)
-    icon:SetPoint("CENTER")
-    icon:SetTexture(133532)
+    icon:SetPoint("CENTER", 0, 0)
+    icon:SetTexture("Interface\\Icons\\INV_Misc_Food_54")
+    btn.icon = icon
 
-    -- Border overlay
-    local border = minimapBtn:CreateTexture(nil, "OVERLAY")
-    border:SetSize(54, 54)
-    border:SetPoint("CENTER")
-    border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+    -- Hover glow
+    local highlight = btn:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetSize(24, 24)
+    highlight:SetPoint("CENTER")
+    highlight:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+    highlight:SetBlendMode("ADD")
 
-    -- Background
-    local bg = minimapBtn:CreateTexture(nil, "BACKGROUND")
-    bg:SetSize(24, 24)
-    bg:SetPoint("CENTER")
-    bg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
+    -- Position on minimap edge
+    local function UpdatePosition()
+        local angle = math.rad(NS.db and NS.db.settings.minimapPos or 215)
+        local x = math.cos(angle) * 80
+        local y = math.sin(angle) * 80
+        btn:ClearAllPoints()
+        btn:SetPoint("CENTER", Minimap, "CENTER", x, y)
+    end
+    UpdatePosition()
 
-    -- Click handler
-    minimapBtn:SetScript("OnClick", function()
+    -- Drag: follow cursor around minimap edge
+    btn:RegisterForDrag("LeftButton")
+    btn:SetScript("OnDragStart", function(self)
+        self:SetScript("OnUpdate", function(self)
+            local mx, my = Minimap:GetCenter()
+            local cx, cy = GetCursorPosition()
+            local scale = Minimap:GetEffectiveScale()
+            cx, cy = cx / scale, cy / scale
+            local angle = math.deg(math.atan2(cy - my, cx - mx))
+            if NS.db then NS.db.settings.minimapPos = angle end
+            local rad = math.rad(angle)
+            self:ClearAllPoints()
+            self:SetPoint("CENTER", Minimap, "CENTER",
+                          math.cos(rad) * 80, math.sin(rad) * 80)
+        end)
+    end)
+    btn:SetScript("OnDragStop", function(self)
+        self:SetScript("OnUpdate", nil)
+    end)
+
+    -- Left-click toggles config window
+    btn:RegisterForClicks("LeftButtonUp")
+    btn:SetScript("OnClick", function()
         NS:FireCallback("TOGGLE_WINDOW")
     end)
 
     -- Tooltip
-    minimapBtn:SetScript("OnEnter", function(self)
+    btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine("MountSpeed")
         GameTooltip:AddLine("Left-click to toggle config", 0.8, 0.8, 0.8)
         GameTooltip:Show()
     end)
-    minimapBtn:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
+    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    -- Drag to reposition around minimap edge
-    minimapBtn:SetScript("OnDragStart", function(self)
-        self:StartMoving()
-        self:SetScript("OnUpdate", function(self)
-            local mx, my = Minimap:GetCenter()
-            local bx, by = self:GetCenter()
-            local angle = math.deg(math.atan2(by - my, bx - mx))
-            UpdateMinimapPosition(angle)
-        end)
-    end)
-    minimapBtn:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        self:SetScript("OnUpdate", nil)
-        local mx, my = Minimap:GetCenter()
-        local bx, by = self:GetCenter()
-        NS.db.settings.minimapPos =
-            math.deg(math.atan2(by - my, bx - mx))
-        UpdateMinimapPosition(NS.db.settings.minimapPos)
-    end)
-
-    UpdateMinimapPosition(NS.db.settings.minimapPos)
+    minimapBtn = btn
 end
 
 ----------------------------------------------------------------------
