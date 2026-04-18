@@ -318,12 +318,12 @@ local function CreateMinimapButton()
     bg:SetPoint("CENTER")
     bg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
 
-    -- Icon (small enough for square corners to hide behind border)
+    -- Icon (circular mask to match other minimap buttons)
     local icon = btn:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(17, 17)
+    icon:SetSize(20, 20)
     icon:SetPoint("CENTER")
     icon:SetTexture("Interface\\Icons\\INV_Misc_Food_54")
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    icon:SetMask("Interface\\CharacterFrame\\TempPortraitAlphaMask")
     btn.icon = icon
 
     -- Circular border (matches standard minimap tracking buttons)
