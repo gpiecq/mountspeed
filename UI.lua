@@ -318,12 +318,11 @@ local function CreateMinimapButton()
     overlay:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
     overlay:SetPoint("TOPLEFT")
 
-    -- Carrot icon (masked to circle to match other minimap buttons)
+    -- Carrot icon
     local icon = btn:CreateTexture(nil, "BACKGROUND")
     icon:SetSize(20, 20)
     icon:SetPoint("CENTER", 0, 0)
     icon:SetTexture("Interface\\Icons\\INV_Misc_Food_54")
-    icon:SetMask("Interface\\CharacterFrame\\TempPortraitAlphaMask")
     btn.icon = icon
 
     -- Hover glow
