@@ -312,19 +312,25 @@ local function CreateMinimapButton()
     btn:SetMovable(true)
     btn:SetClampedToScreen(true)
 
-    -- Border (matches standard minimap tracking buttons)
+    -- Dark circular background (same as other minimap buttons)
+    local bg = btn:CreateTexture(nil, "BACKGROUND")
+    bg:SetSize(24, 24)
+    bg:SetPoint("CENTER")
+    bg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
+
+    -- Icon (small enough for square corners to hide behind border)
+    local icon = btn:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(17, 17)
+    icon:SetPoint("CENTER")
+    icon:SetTexture("Interface\\Icons\\INV_Misc_Food_54")
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    btn.icon = icon
+
+    -- Circular border (matches standard minimap tracking buttons)
     local overlay = btn:CreateTexture(nil, "OVERLAY")
     overlay:SetSize(53, 53)
     overlay:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
     overlay:SetPoint("TOPLEFT")
-
-    -- Icon (cropped to fit the circular minimap button frame)
-    local icon = btn:CreateTexture(nil, "BACKGROUND")
-    icon:SetSize(24, 24)
-    icon:SetPoint("CENTER", 0, 0)
-    icon:SetTexture("Interface\\Icons\\INV_Misc_Food_54")
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    btn.icon = icon
 
     -- Hover glow
     local highlight = btn:CreateTexture(nil, "HIGHLIGHT")
