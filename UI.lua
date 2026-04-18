@@ -305,7 +305,7 @@ local function CreateMinimapButton()
     if minimapBtn then return end
     if not Minimap then return end
 
-    local btn = CreateFrame("Button", "MountSpeedMinimapBtn", Minimap)
+    local btn = CreateFrame("Button", "MountSpeedMinimapButton", Minimap)
     btn:SetSize(32, 32)
     btn:SetFrameStrata("MEDIUM")
     btn:SetFrameLevel(8)
