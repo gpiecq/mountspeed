@@ -1,0 +1,12 @@
+## Interface: 20505
+## Title: MountSpeed
+## Notes: Auto-swap equipment when mounting for speed bonuses
+## Author: PIECQ Grégory
+## Version: 0.1.0
+## SavedVariables: MountSpeedDB
+## SavedVariablesPerCharacter: MountSpeedCharDB
+
+Core.lua
+Slots.lua
+Swap.lua
+UI.lua
