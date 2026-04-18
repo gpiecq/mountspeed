@@ -1,0 +1,82 @@
+name: Package & Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version from TOC
+        id: version
+        run: |
+          VERSION=$(grep "^## Version:" MountSpeed.toc | sed 's/## Version: //' | tr -d '\r')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check if tag already exists
+        id: tagcheck
+        run: |
+          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build zip
+        if: steps.tagcheck.outputs.exists == 'false'
+        run: |
+          ADDON_NAME="MountSpeed"
+          mkdir -p "/tmp/addon-build/$ADDON_NAME"
+
+          cp MountSpeed.toc \
+             Core.lua \
+             Slots.lua \
+             Swap.lua \
+             UI.lua \
+             "/tmp/addon-build/$ADDON_NAME/"
+
+          [ -f CHANGELOG.md ] && cp CHANGELOG.md "/tmp/addon-build/$ADDON_NAME/" || true
+          [ -f README.md ]    && cp README.md    "/tmp/addon-build/$ADDON_NAME/" || true
+          [ -f LICENSE ]      && cp LICENSE      "/tmp/addon-build/$ADDON_NAME/" || true
+
+          cd /tmp/addon-build
+          zip -r "$GITHUB_WORKSPACE/MountSpeed.zip" "$ADDON_NAME"
+
+      - name: Extract changelog section for this version
+        if: steps.tagcheck.outputs.exists == 'false'
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if [ -f CHANGELOG.md ]; then
+            awk -v ver="$VERSION" '
+              $0 ~ "^## \\["ver"\\]" { found=1; next }
+              found && /^## \[/        { exit }
+              found                    { print }
+            ' CHANGELOG.md > /tmp/release_notes.md
+            if [ -s /tmp/release_notes.md ]; then
+              echo "found=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "found=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        if: steps.tagcheck.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: MountSpeed v${{ steps.version.outputs.version }}
+          files: MountSpeed.zip
+          body_path: ${{ steps.changelog.outputs.found == 'true' && '/tmp/release_notes.md' || '' }}
+          generate_release_notes: ${{ steps.changelog.outputs.found != 'true' }}

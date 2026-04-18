@@ -1,0 +1,40 @@
+name: Build Addon ZIP
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version from TOC
+        id: version
+        run: |
+          VERSION=$(grep "^## Version:" MountSpeed.toc | sed 's/## Version: //' | tr -d '\r')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare addon folder
+        run: |
+          ADDON_NAME="MountSpeed"
+          mkdir -p "build/$ADDON_NAME"
+
+          cp MountSpeed.toc \
+             Core.lua \
+             Slots.lua \
+             Swap.lua \
+             UI.lua \
+             "build/$ADDON_NAME/"
+
+          [ -f CHANGELOG.md ] && cp CHANGELOG.md "build/$ADDON_NAME/" || true
+          [ -f README.md ]    && cp README.md    "build/$ADDON_NAME/" || true
+          [ -f LICENSE ]      && cp LICENSE      "build/$ADDON_NAME/" || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MountSpeed-v${{ steps.version.outputs.version }}-pr${{ github.event.pull_request.number }}
+          path: build/MountSpeed
