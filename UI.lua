@@ -312,25 +312,18 @@ local function CreateMinimapButton()
     btn:SetMovable(true)
     btn:SetClampedToScreen(true)
 
-    -- Dark circular background (same as other minimap buttons)
-    local bg = btn:CreateTexture(nil, "BACKGROUND")
-    bg:SetSize(24, 24)
-    bg:SetPoint("CENTER")
-    bg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
-
-    -- Icon (circular mask to match other minimap buttons)
-    local icon = btn:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(20, 20)
-    icon:SetPoint("CENTER")
-    icon:SetTexture("Interface\\Icons\\INV_Misc_Food_54")
-    icon:SetMask("Interface\\CharacterFrame\\TempPortraitAlphaMask")
-    btn.icon = icon
-
-    -- Circular border (matches standard minimap tracking buttons)
+    -- Circular tracking border (matches other minimap buttons)
     local overlay = btn:CreateTexture(nil, "OVERLAY")
     overlay:SetSize(53, 53)
     overlay:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
     overlay:SetPoint("TOPLEFT")
+
+    -- Icon (star raid target — golden, visible, circular)
+    local icon = btn:CreateTexture(nil, "BACKGROUND")
+    icon:SetSize(20, 20)
+    icon:SetPoint("CENTER", 0, 0)
+    icon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_1")
+    btn.icon = icon
 
     -- Hover glow
     local highlight = btn:CreateTexture(nil, "HIGHLIGHT")
