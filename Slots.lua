@@ -6,6 +6,10 @@ local _, NS = ...
 local Slots = {}
 NS.Slots = Slots
 
+-- API compat: modern WoW clients moved container APIs under C_Container
+local GetContainerNumSlots = C_Container and C_Container.GetContainerNumSlots or GetContainerNumSlots
+local GetContainerItemLink = C_Container and C_Container.GetContainerItemLink or GetContainerItemLink
+
 ----------------------------------------------------------------------
 -- The 5 configurable mount-speed slots (display order)
 ----------------------------------------------------------------------
