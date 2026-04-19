@@ -10,6 +10,8 @@ A World of Warcraft: Burning Crusade Classic addon that automatically swaps your
 - Item selection via dropdown (bag scan) or drag & drop
 - Saves your current gear before swapping, restores it on dismount
 - Combat-safe: queues gear restore if dismounted in combat
+- Race-safe: protects `savedEquipment` against aura flicker, fast
+  dismount/remount, and stale swap state after a crash or logout
 - Minimap button (Carrot icon)
 - No external dependencies (no Ace3, no LibStub)
 
