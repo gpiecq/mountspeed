@@ -16,11 +16,33 @@ function Swap:SaveAndEquip()
     local mountItems = NS.charDb.mountItems
     if not mountItems or not next(mountItems) then return end
 
+    -- Guard: if we're already in the swapped state (e.g. aura flicker or
+    -- fast dismount/remount while EquipItemByName is still pending),
+    -- do NOT re-snapshot — that would capture our own mount-speed items
+    -- as the "original gear" and corrupt savedEquipment.
+    if NS.charDb.isMountSwapped then
+        for slotId, itemId in pairs(mountItems) do
+            local current = GetInventoryItemID("player", slotId)
+            if current ~= itemId then
+                EquipItemByName(itemId, slotId)
+            end
+        end
+        return
+    end
+
     -- Snapshot currently-worn items
     NS.charDb.savedEquipment = {}
     for slotId, _ in pairs(mountItems) do
-        NS.charDb.savedEquipment[slotId] =
-            GetInventoryItemID("player", slotId) or 0
+        local equipped = GetInventoryItemID("player", slotId) or 0
+        -- Defensive: if what's currently worn is already our own mount-speed
+        -- item (manual pre-equip, or a previous restore that didn't finish),
+        -- store 0 so Restore skips this slot instead of "restoring" the
+        -- mount-speed item as the original.
+        if equipped == mountItems[slotId] then
+            NS.charDb.savedEquipment[slotId] = 0
+        else
+            NS.charDb.savedEquipment[slotId] = equipped
+        end
     end
 
     -- Equip mount-speed items
@@ -83,6 +105,14 @@ end
 ----------------------------------------------------------------------
 NS:RegisterCallback("PLAYER_LOGIN", function()
     wasMounted = IsMounted()
+
+    -- Recover from a stale swap state (e.g. logout/crash while mounted,
+    -- logged back in unmounted): restore the original gear so we don't
+    -- stay stuck wearing mount-speed items with no event to trigger us.
+    if NS.charDb.isMountSwapped and not wasMounted
+       and NS.charDb.savedEquipment and next(NS.charDb.savedEquipment) then
+        Swap:Restore()
+    end
 end)
 
 ----------------------------------------------------------------------
