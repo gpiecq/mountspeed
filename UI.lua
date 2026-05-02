@@ -601,10 +601,90 @@ local function CreateMinimapButton()
 end
 
 ----------------------------------------------------------------------
+-- Floating manual-swap button (draggable, position saved per account)
+----------------------------------------------------------------------
+local swapBtn
+
+local function UpdateSwapBtnVisual()
+    if not swapBtn then return end
+    if NS.charDb.isMountSwapped then
+        swapBtn.icon:SetDesaturated(true)
+        swapBtn.border:Show()
+        swapBtn.tooltipText = "Switch to base gear"
+    else
+        swapBtn.icon:SetDesaturated(false)
+        swapBtn.border:Hide()
+        swapBtn.tooltipText = "Switch to mount gear"
+    end
+end
+
+local function CreateSwapButton()
+    if swapBtn then return end
+
+    local btn = CreateFrame("Button", "MountSpeedSwapButton", UIParent)
+    btn:SetSize(32, 32)
+    btn:SetFrameStrata("MEDIUM")
+    btn:SetMovable(true)
+    btn:SetClampedToScreen(true)
+    btn:EnableMouse(true)
+    btn:RegisterForDrag("LeftButton")
+    btn:RegisterForClicks("LeftButtonUp")
+
+    local icon = btn:CreateTexture(nil, "ARTWORK")
+    icon:SetAllPoints()
+    icon:SetTexture("Interface\\Icons\\Ability_Mount_RidingHorse")
+    btn.icon = icon
+
+    local border = btn:CreateTexture(nil, "OVERLAY")
+    border:SetAllPoints()
+    border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+    border:SetBlendMode("ADD")
+    border:SetVertexColor(1, 0.85, 0.2)  -- gold
+    border:Hide()
+    btn.border = border
+
+    local highlight = btn:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAllPoints()
+    highlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
+    highlight:SetBlendMode("ADD")
+
+    -- Apply saved position
+    local pos = NS.db and NS.db.settings.swapButtonPos
+                or { point = "CENTER", x = 0, y = -100 }
+    btn:ClearAllPoints()
+    btn:SetPoint(pos.point or "CENTER", UIParent,
+                 pos.point or "CENTER", pos.x or 0, pos.y or -100)
+
+    -- Drag → reposition + save
+    btn:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    btn:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        local point, _, _, x, y = self:GetPoint()
+        NS.db.settings.swapButtonPos = { point = point, x = x, y = y }
+    end)
+
+    btn:SetScript("OnClick", function()
+        if NS.Swap and NS.Swap.Toggle then NS.Swap:Toggle() end
+    end)
+
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("MountSpeed")
+        GameTooltip:AddLine(self.tooltipText or "Switch gear", 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    swapBtn = btn
+    UpdateSwapBtnVisual()
+end
+
+----------------------------------------------------------------------
 -- Callbacks
 ----------------------------------------------------------------------
 NS:RegisterCallback("ADDON_LOADED", function()
     CreateMinimapButton()
+    CreateSwapButton()
 end)
 
 NS:RegisterCallback("TOGGLE_WINDOW", function()
@@ -629,6 +709,7 @@ end)
 
 NS:RegisterCallback("DATA_UPDATED", function()
     RefreshRows()
+    UpdateSwapBtnVisual()
 end)
 
 NS:RegisterCallback("CAPTURE_BASE_CONFIRMED", function()
