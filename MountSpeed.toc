@@ -10,3 +10,4 @@ Core.lua
 Slots.lua
 Swap.lua
 UI.lua
+Bindings.xml

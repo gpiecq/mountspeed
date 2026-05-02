@@ -726,3 +726,14 @@ NS:RegisterCallback("CAPTURE_BASE_CONFIRMED", function()
     NS:FireCallback("DATA_UPDATED")
     NS:Print("Base gear captured from current equipment.")
 end)
+
+----------------------------------------------------------------------
+-- Global trigger callable from Bindings.xml (no NS access in that scope)
+----------------------------------------------------------------------
+function MountSpeedSwapTrigger()
+    if NS.Swap and NS.Swap.Toggle then NS.Swap:Toggle() end
+end
+
+-- Localized labels for the Key Bindings UI
+BINDING_HEADER_MOUNTSPEED        = "MountSpeed"
+BINDING_NAME_MOUNTSPEED_TOGGLE   = "Toggle mount/base gear"
