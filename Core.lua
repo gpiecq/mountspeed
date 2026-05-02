@@ -10,16 +10,20 @@ NS.version = "1.0.0"
 ----------------------------------------------------------------------
 local DEFAULTS = {
     settings = {
-        windowPos = { point = "CENTER", x = 0, y = 0 },
-        minimapPos = 215,
+        windowPos     = { point = "CENTER", x = 0, y = 0 },
+        minimapPos    = 215,
+        swapButtonPos = { point = "CENTER", x = 0, y = -100 },
     },
 }
 
 local CHAR_DEFAULTS = {
     enabled = true,
-    mountItems = {},
-    savedEquipment = {},
-    isMountSwapped = false,
+    sets = {
+        mount = {},
+        base  = {},
+    },
+    isMountSwapped         = false,
+    migrationNoticeShown   = false,
 }
 
 ----------------------------------------------------------------------
@@ -93,6 +97,18 @@ frame:SetScript("OnEvent", function(_, event, arg1)
         else
             MergeDefaults(MountSpeedCharDB, CHAR_DEFAULTS)
         end
+
+        -- Migrate from v1.x schema. We ALIAS sets.mount to the same table as
+        -- mountItems so v1.x UI code (which still reads
+        -- MountSpeedCharDB.mountItems) keeps working through Tasks 1-2. Task 3
+        -- converts the UI to read sets.* directly and finalises this migration
+        -- by replacing the alias with a deep copy + dropping mountItems.
+        if MountSpeedCharDB.mountItems then
+            MountSpeedCharDB.sets = MountSpeedCharDB.sets or { mount = {}, base = {} }
+            MountSpeedCharDB.sets.mount = MountSpeedCharDB.mountItems
+            -- migrationNoticeShown stays false → user gets the one-time message
+        end
+        MountSpeedCharDB.savedEquipment = nil  -- obsolete in v2.0
 
         NS.db     = MountSpeedDB
         NS.charDb = MountSpeedCharDB
