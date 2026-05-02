@@ -123,6 +123,29 @@ frame:SetScript("OnEvent", function(_, event, arg1)
 end)
 
 ----------------------------------------------------------------------
+-- One-time migration notice for v1.x → v2.0 upgrades
+----------------------------------------------------------------------
+NS:RegisterCallback("PLAYER_LOGIN", function()
+    if NS.charDb.migrationNoticeShown then return end
+
+    local sets = NS.charDb.sets
+    if not sets then return end
+
+    local hasMount = next(sets.mount) ~= nil
+    local hasBase  = next(sets.base)  ~= nil
+
+    if hasMount and not hasBase then
+        NS:Print("Updated to v" .. NS.version
+            .. ". Open the window (/ms) and configure your "
+            .. "|cffffd200Base gear|r — auto-swap is paused until you do.")
+        NS:Print("Tip: equip your normal gear, then click "
+            .. "|cffffd200Capture current|r to fill it in one click.")
+    end
+
+    NS.charDb.migrationNoticeShown = true
+end)
+
+----------------------------------------------------------------------
 -- Slash commands  /ms  /mountspeed
 ----------------------------------------------------------------------
 SLASH_MOUNTSPEED1 = "/ms"
