@@ -660,7 +660,11 @@ local function CreateSwapButton()
     btn:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
         local point, _, _, x, y = self:GetPoint()
-        NS.db.settings.swapButtonPos = { point = point, x = x, y = y }
+        NS.db.settings.swapButtonPos = {
+            point = point,
+            x = math.floor(x + 0.5),
+            y = math.floor(y + 0.5),
+        }
     end)
 
     btn:SetScript("OnClick", function()
