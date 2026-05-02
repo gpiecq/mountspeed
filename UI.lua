@@ -69,10 +69,10 @@ local OpenItemPicker
 -- SRA-style item picker window (custom dark frame, scrollable rows)
 -- One instance, reused across opens. Anchored at the cursor.
 ----------------------------------------------------------------------
-local PICKER_WIDTH       = 280
-local PICKER_HEIGHT      = 240
-local PICKER_ROW_HEIGHT  = 22
+local PICKER_WIDTH        = 280
+local PICKER_ROW_HEIGHT   = 22
 local PICKER_VISIBLE_ROWS = 9
+local PICKER_HEIGHT       = PICKER_VISIBLE_ROWS * PICKER_ROW_HEIGHT + 42  -- title bar + padding
 
 local function CreateItemPicker()
     if itemPicker then return itemPicker end
