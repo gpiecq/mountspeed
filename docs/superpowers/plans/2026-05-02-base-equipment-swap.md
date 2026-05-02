@@ -275,89 +275,22 @@ frame:SetScript("OnEvent", function(_, event, arg1)
 end)
 ```
 
-- [ ] **Step 2: Update /ms restore in Core.lua to use Apply**
-
-In `Core.lua`, find the `/ms restore` branch (around line 137-142):
-
-```lua
-    elseif msg == "restore" then
-        -- Manual emergency restore: bypasses transition detection for
-        -- cases where the game didn't fire the expected events.
-        if NS.Swap and NS.Swap.Restore then
-            NS.Swap:Restore()
-        end
-```
-
-Replace with:
-
-```lua
-    elseif msg == "restore" then
-        -- Force-equip base gear (legacy alias for /ms swap when on mount gear).
-        if NS.Swap and NS.Swap.Apply then
-            NS.Swap:Apply("base")
-        end
-```
-
-- [ ] **Step 3: Update minimap right-click in UI.lua to use Apply**
-
-In `UI.lua`, find the minimap button click handler (around line 366-375):
-
-```lua
-    btn:SetScript("OnClick", function(_, button)
-        if button == "RightButton" then
-            if NS.Swap and NS.Swap.Restore then
-                NS.Swap:Restore()
-            end
-        else
-            NS:FireCallback("TOGGLE_WINDOW")
-        end
-    end)
-```
-
-Replace with:
-
-```lua
-    btn:SetScript("OnClick", function(_, button)
-        if button == "RightButton" then
-            if NS.Swap and NS.Swap.Apply then
-                NS.Swap:Apply("base")
-            end
-        else
-            NS:FireCallback("TOGGLE_WINDOW")
-        end
-    end)
-```
-
-- [ ] **Step 4: Update minimap tooltip text**
-
-In `UI.lua`, find (around line 378-384):
-
-```lua
-        GameTooltip:AddLine("Right-click to restore original gear", 0.8, 0.8, 0.8)
-```
-
-Replace with:
-
-```lua
-        GameTooltip:AddLine("Right-click to equip base gear", 0.8, 0.8, 0.8)
-```
-
-- [ ] **Step 5: Deploy and reload**
+- [ ] **Step 2: Deploy and reload**
 
 ```bash
-cp Core.lua Swap.lua UI.lua "/c/Program Files (x86)/World of Warcraft/_anniversary_/Interface/AddOns/MountSpeed/"
+cp Swap.lua "/c/Program Files (x86)/World of Warcraft/_anniversary_/Interface/AddOns/MountSpeed/"
 ```
 
 In game: `/reload`
 
-- [ ] **Step 6: Verify Swap.lua loads cleanly**
+- [ ] **Step 3: Verify Swap.lua loads cleanly**
 
 In game: `/dump NS.Swap.Apply` — expected: returns a function reference.
 In game: `/dump NS.Swap.Toggle` — expected: returns a function reference.
 
-No Lua errors should appear in chat or BugSack.
+No Lua errors should appear in chat or BugSack. (Note: the v1.x `/ms restore` slash command and minimap right-click handler don't exist in the 1.0.1 baseline — there's nothing to update; the new `/ms swap` is added in Task 7.)
 
-- [ ] **Step 7: Verify behavior — note: no auto-swap yet because sets.base is empty**
+- [ ] **Step 4: Verify behavior — note: no auto-swap yet because sets.base is empty**
 
 The UI still uses the v1.x schema (rewritten in Task 3) but reads/writes through the `mountItems` alias which points at the same table as `sets.mount`. Both names refer to the same data.
 
@@ -365,23 +298,68 @@ In game: configure mount gear via the existing UI dropdown for at least one slot
 
 Manually populate base in game: `/run MountSpeedCharDB.sets.base[13] = <some_trinket_itemId>` (use a trinket item id from your bags that fits Trinket 1; check your bags via mouseover or `/dump GetContainerItemLink(0, 1)` etc.). Mount up — expected: Trinket 1 swaps to the mount item. Dismount — expected: it swaps back to the base item. Watch for chat lines "Mount gear equipped." / "Base gear equipped."
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add Swap.lua Core.lua UI.lua
+git add Swap.lua
 git commit -m "Swap.lua: unified Apply/Toggle, drop snapshot machinery"
 ```
 
 ---
 
-## Task 3: UI dual-column rows
+## Task 3: UI dual-column rows + SRA-style item picker
 
 **Files:**
-- Modify: `UI.lua` (RefreshRows, CreateMainFrame row construction, window width, charDb references)
+- Modify: `UI.lua` (style helpers, item picker window, RefreshRows, CreateMainFrame row construction, window width)
+- Modify: `Core.lua` (finalise migration)
 
-- [ ] **Step 1: Update window width constant**
+The Blizzard `UIDropDownMenu` used in v1.x is replaced by a custom dark window styled to match SimpleRaidAssign (cyan accent on near-black background, scrollable item list, anchored at cursor). The drag-and-drop receivers on each item zone are kept as a fast-path alternative.
 
-In `UI.lua`, find (around line 19):
+- [ ] **Step 1: Add SRA-style helpers at top of UI.lua**
+
+In `UI.lua`, immediately after `local _, NS = ...` (line 5), insert the style block:
+
+```lua
+----------------------------------------------------------------------
+-- Style (matches SimpleRaidAssign palette for visual coherence)
+----------------------------------------------------------------------
+local COLOURS = {
+    bg        = { 0.08, 0.08, 0.10, 0.95 },
+    panel     = { 0.12, 0.12, 0.14, 0.96 },
+    border    = { 0.30, 0.30, 0.34, 1    },
+    accent    = { 0.00, 0.80, 1.00, 1    },
+    text      = { 1, 1, 1, 1 },
+    dim       = { 0.65, 0.65, 0.70, 1 },
+    rowAlt    = { 1, 1, 1, 0.04 },
+    rowHover  = { 1, 1, 1, 0.10 },
+}
+
+local function SkinFrame(f)
+    if not f.SetBackdrop and BackdropTemplateMixin then
+        Mixin(f, BackdropTemplateMixin)
+    end
+    if f.SetBackdrop then
+        f:SetBackdrop({
+            bgFile   = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = 1,
+        })
+        f:SetBackdropColor(unpack(COLOURS.bg))
+        f:SetBackdropBorderColor(unpack(COLOURS.border))
+    end
+end
+
+local function FS(parent, size, layer)
+    local fs = parent:CreateFontString(nil, layer or "OVERLAY")
+    fs:SetFont("Fonts\\FRIZQT__.TTF", size or 12, "OUTLINE")
+    fs:SetTextColor(unpack(COLOURS.text))
+    return fs
+end
+```
+
+- [ ] **Step 2: Update window width constant**
+
+In `UI.lua`, find:
 
 ```lua
 local WINDOW_WIDTH  = 350
@@ -393,7 +371,258 @@ Replace with:
 local WINDOW_WIDTH  = 520
 ```
 
-- [ ] **Step 2: Rewrite RefreshRows for two zones**
+- [ ] **Step 3: Update forward declarations**
+
+In `UI.lua`, find the forward declarations:
+
+```lua
+local mainFrame, enableCB, rows, dropdown
+local activeSlotId
+local positionApplied = false
+rows = {}
+```
+
+Replace with:
+
+```lua
+local mainFrame, enableCB, rows, itemPicker
+local activeSlotId, activeSetName
+local positionApplied = false
+rows = {}
+
+-- Forward decl so CreateMainFrame can call it
+local OpenItemPicker
+```
+
+- [ ] **Step 4: Remove the v1.x UIDropDownMenu setup and add the SRA-style item picker**
+
+In `UI.lua`, find inside `CreateMainFrame` the entire "Shared dropdown" block (the comment header plus the `dropdown = CreateFrame(...)` call and the entire `UIDropDownMenu_Initialize(...)` call that follows). It looks like this:
+
+```lua
+    ----------------------------------------------------------------
+    -- Shared dropdown (one instance, re-initialised per slot click)
+    ----------------------------------------------------------------
+    dropdown = CreateFrame("Frame", "MountSpeedItemDropdown", UIParent,
+                           "UIDropDownMenuTemplate")
+
+    UIDropDownMenu_Initialize(dropdown, function()
+        if not activeSlotId then return end
+        local items = NS.Slots:ScanBagsForSlot(activeSlotId)
+        if #items == 0 then
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = "No items found in bags"
+            info.disabled = true
+            info.notCheckable = true
+            UIDropDownMenu_AddButton(info)
+        else
+            for _, item in ipairs(items) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = item.name
+                info.icon = item.icon
+                info.notCheckable = true
+                if item.quality and ITEM_QUALITY_COLORS[item.quality] then
+                    local c = ITEM_QUALITY_COLORS[item.quality]
+                    info.colorCode =
+                        format("|cff%02x%02x%02x",
+                               c.r * 255, c.g * 255, c.b * 255)
+                end
+                info.func = function()
+                    NS.charDb.mountItems[activeSlotId] = item.itemId
+                    NS:FireCallback("DATA_UPDATED")
+                    CloseDropDownMenus()
+                end
+                UIDropDownMenu_AddButton(info)
+            end
+        end
+    end, "MENU")
+```
+
+DELETE that entire block (it spans from the `--- Shared dropdown ---` banner through the closing `, "MENU")` line — roughly 30 lines).
+
+Then, OUTSIDE `CreateMainFrame` (above it, near the top of the file just after the style helpers from Step 1), add the SRA-style item picker:
+
+```lua
+----------------------------------------------------------------------
+-- SRA-style item picker window (custom dark frame, scrollable rows)
+-- One instance, reused across opens. Anchored at the cursor.
+----------------------------------------------------------------------
+local PICKER_WIDTH       = 280
+local PICKER_HEIGHT      = 240
+local PICKER_ROW_HEIGHT  = 22
+local PICKER_VISIBLE_ROWS = 9
+
+local function CreateItemPicker()
+    if itemPicker then return itemPicker end
+
+    local f = CreateFrame("Frame", "MountSpeedItemPicker", UIParent,
+                          BackdropTemplateMixin and "BackdropTemplate" or nil)
+    f:SetSize(PICKER_WIDTH, PICKER_HEIGHT)
+    f:SetFrameStrata("DIALOG")
+    f:SetFrameLevel(100)
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:SetClampedToScreen(true)
+    f:Hide()
+    SkinFrame(f)
+    tinsert(UISpecialFrames, "MountSpeedItemPicker")
+
+    -- Title bar (drag region)
+    local titleBar = CreateFrame("Frame", nil, f)
+    titleBar:SetPoint("TOPLEFT", 0, 0)
+    titleBar:SetPoint("TOPRIGHT", 0, 0)
+    titleBar:SetHeight(24)
+    titleBar:EnableMouse(true)
+    titleBar:RegisterForDrag("LeftButton")
+    titleBar:SetScript("OnDragStart", function() f:StartMoving() end)
+    titleBar:SetScript("OnDragStop",  function() f:StopMovingOrSizing() end)
+
+    local title = FS(titleBar, 13)
+    title:SetPoint("LEFT", 10, 0)
+    title:SetTextColor(unpack(COLOURS.accent))
+    f.title = title
+
+    local closeBtn = CreateFrame("Button", nil, titleBar, "UIPanelCloseButton")
+    closeBtn:SetPoint("TOPRIGHT", 2, 2)
+    closeBtn:SetScript("OnClick", function() f:Hide() end)
+
+    -- Scroll frame containing the rows
+    local scroll = CreateFrame("ScrollFrame", "MountSpeedItemPickerScroll", f,
+                               "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 8, -28)
+    scroll:SetPoint("BOTTOMRIGHT", -28, 8)
+    f.scroll = scroll
+
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(PICKER_WIDTH - 36, PICKER_HEIGHT - 36)
+    scroll:SetScrollChild(content)
+    f.content = content
+
+    f.rows = {}
+
+    itemPicker = f
+    return f
+end
+
+----------------------------------------------------------------------
+-- Build / refresh picker rows for the current activeSlotId / activeSetName
+----------------------------------------------------------------------
+local function RefreshPickerRows()
+    local f = itemPicker
+    if not f or not activeSlotId or not activeSetName then return end
+
+    local items = NS.Slots:ScanBagsForSlot(activeSlotId)
+
+    -- Hide all prior rows; we'll re-show / re-create as needed
+    for _, row in ipairs(f.rows) do row:Hide() end
+
+    if #items == 0 then
+        if not f.emptyText then
+            f.emptyText = FS(f.content, 12)
+            f.emptyText:SetPoint("CENTER")
+            f.emptyText:SetTextColor(unpack(COLOURS.dim))
+            f.emptyText:SetText("No matching items in your bags.")
+        end
+        f.emptyText:Show()
+        f.content:SetHeight(60)
+        return
+    end
+    if f.emptyText then f.emptyText:Hide() end
+
+    for i, item in ipairs(items) do
+        local row = f.rows[i]
+        if not row then
+            row = CreateFrame("Button", nil, f.content)
+            row:SetHeight(PICKER_ROW_HEIGHT)
+            row:SetPoint("LEFT", f.content, "LEFT", 0, 0)
+            row:SetPoint("RIGHT", f.content, "RIGHT", 0, 0)
+
+            local bg = row:CreateTexture(nil, "BACKGROUND")
+            bg:SetAllPoints()
+            row.bg = bg
+
+            local icon = row:CreateTexture(nil, "ARTWORK")
+            icon:SetSize(18, 18)
+            icon:SetPoint("LEFT", 4, 0)
+            row.icon = icon
+
+            local name = FS(row, 12)
+            name:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+            name:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+            name:SetJustifyH("LEFT")
+            row.name = name
+
+            row:SetScript("OnEnter", function(self)
+                self.bg:SetColorTexture(unpack(COLOURS.rowHover))
+                if self.itemId then
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    local _, link = GetItemInfo(self.itemId)
+                    if link then GameTooltip:SetHyperlink(link) end
+                    GameTooltip:Show()
+                end
+            end)
+            row:SetScript("OnLeave", function(self)
+                if self.alt then
+                    self.bg:SetColorTexture(unpack(COLOURS.rowAlt))
+                else
+                    self.bg:SetColorTexture(0, 0, 0, 0)
+                end
+                GameTooltip:Hide()
+            end)
+            row:SetScript("OnClick", function(self)
+                NS.charDb.sets[activeSetName][activeSlotId] = self.itemId
+                NS:FireCallback("DATA_UPDATED")
+                f:Hide()
+            end)
+
+            f.rows[i] = row
+        end
+
+        row:SetPoint("TOP", f.content, "TOP", 0, -((i - 1) * PICKER_ROW_HEIGHT))
+        row.itemId = item.itemId
+        row.alt    = (i % 2 == 0)
+        row.icon:SetTexture(item.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+
+        local color = ITEM_QUALITY_COLORS[item.quality or 1] or { r = 1, g = 1, b = 1 }
+        row.name:SetText(item.name)
+        row.name:SetTextColor(color.r, color.g, color.b)
+
+        if row.alt then
+            row.bg:SetColorTexture(unpack(COLOURS.rowAlt))
+        else
+            row.bg:SetColorTexture(0, 0, 0, 0)
+        end
+
+        row:Show()
+    end
+
+    f.content:SetHeight(#items * PICKER_ROW_HEIGHT)
+end
+
+----------------------------------------------------------------------
+-- Open the picker for a given slot/set, anchored at the cursor
+----------------------------------------------------------------------
+function OpenItemPicker(slotId, setName)
+    activeSlotId  = slotId
+    activeSetName = setName
+
+    local f = CreateItemPicker()
+    local slotName = (NS.Slots.byId[slotId] and NS.Slots.byId[slotId].name) or "?"
+    local setLabel = (setName == "mount") and "Mount" or "Base"
+    f.title:SetText(("Select %s item — %s"):format(setLabel, slotName))
+
+    RefreshPickerRows()
+
+    -- Anchor at cursor (clamped to screen by SetClampedToScreen)
+    local x, y = GetCursorPosition()
+    local scale = UIParent:GetEffectiveScale()
+    f:ClearAllPoints()
+    f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale + 8, y / scale - 8)
+    f:Show()
+    f:Raise()
+end
+```
+
+- [ ] **Step 5: Rewrite RefreshRows for two zones**
 
 Replace the entire `RefreshRows` function (currently around lines 32-59) with:
 
@@ -432,49 +661,7 @@ local function RefreshRows()
 end
 ```
 
-- [ ] **Step 3: Update activeSlotId to also track which set**
-
-In `UI.lua`, find the forward declarations (around lines 24-27):
-
-```lua
-local mainFrame, enableCB, rows, dropdown
-local activeSlotId
-local positionApplied = false
-rows = {}
-```
-
-Replace with:
-
-```lua
-local mainFrame, enableCB, rows, dropdown
-local activeSlotId, activeSetName
-local positionApplied = false
-rows = {}
-```
-
-- [ ] **Step 4: Update dropdown initialiser to write to correct set**
-
-Find `UIDropDownMenu_Initialize` (around lines 73-102). Change the `info.func` (around lines 94-98):
-
-```lua
-                info.func = function()
-                    NS.charDb.mountItems[activeSlotId] = item.itemId
-                    NS:FireCallback("DATA_UPDATED")
-                    CloseDropDownMenus()
-                end
-```
-
-Replace with:
-
-```lua
-                info.func = function()
-                    NS.charDb.sets[activeSetName][activeSlotId] = item.itemId
-                    NS:FireCallback("DATA_UPDATED")
-                    CloseDropDownMenus()
-                end
-```
-
-- [ ] **Step 5: Update header text and add column labels**
+- [ ] **Step 6: Update header text and add column labels**
 
 Find the section header (around lines 161-166):
 
@@ -511,7 +698,7 @@ Replace with:
     baseColLabel:SetTextColor(1, 0.9, 0.6)
 ```
 
-- [ ] **Step 6: Replace single-row construction with dual-zone rows**
+- [ ] **Step 7: Replace single-row construction with dual-zone rows**
 
 Find the row-construction loop (around lines 172-285, the `for i, slotInfo in ipairs(NS.Slots.ORDER) do` block). Replace the **entire loop** with:
 
@@ -544,10 +731,8 @@ Find the row-construction loop (around lines 172-285, the `for i, slotInfo in ip
         setBtn:SetSize(45, 22)
         setBtn:SetPoint("RIGHT", -2, 0)
         setBtn:SetText("Set")
-        setBtn:SetScript("OnClick", function(self)
-            activeSlotId  = slotInfo.id
-            activeSetName = setName
-            ToggleDropDownMenu(1, nil, dropdown, self, 0, 0)
+        setBtn:SetScript("OnClick", function()
+            OpenItemPicker(slotInfo.id, setName)
         end)
         zone.setBtn = setBtn
 
@@ -635,7 +820,7 @@ Find the row-construction loop (around lines 172-285, the `for i, slotInfo in ip
     end
 ```
 
-- [ ] **Step 7: Finalise the v1.x → v2.0 migration in Core.lua**
+- [ ] **Step 8: Finalise the v1.x → v2.0 migration in Core.lua**
 
 The UI no longer reads `MountSpeedCharDB.mountItems`, so the alias from Task 1 can be replaced with a proper deep migration that drops `mountItems`.
 
@@ -672,7 +857,7 @@ Replace with:
 
 Note: for users who already loaded the alias build (Task 1 deployed), `sets.mount` already holds the data — the `for` loop just copies an entry that's already there, then nils `mountItems`. Idempotent.
 
-- [ ] **Step 8: Deploy and reload**
+- [ ] **Step 9: Deploy and reload**
 
 ```bash
 cp Core.lua UI.lua "/c/Program Files (x86)/World of Warcraft/_anniversary_/Interface/AddOns/MountSpeed/"
@@ -680,25 +865,31 @@ cp Core.lua UI.lua "/c/Program Files (x86)/World of Warcraft/_anniversary_/Inter
 
 In game: `/reload` then `/ms`
 
-- [ ] **Step 9: Verify dual-column UI**
+- [ ] **Step 10: Verify dual-column UI + SRA-style picker**
 
 Expected:
 - Window is wider (520px)
 - Each row shows: slot name on left, then mount item zone, then `⇄`, then base item zone
 - Column headers "Mount gear" and "Base gear" appear above the rows
-- Drag an item from bags onto the mount zone → it appears there
-- Drag a different item onto the base zone for the same slot → it appears there
-- Click "Set" on either zone opens the dropdown listing fitting items from bags
+- Click "Set" on either zone opens a **dark SRA-style picker window** at the cursor with:
+  - Title bar showing "Select Mount item — Trinket 1" (or "Select Base item — ..."), title text in cyan
+  - Close button (X) on the right of the title bar
+  - Scrollable list of fitting items from bags, each row showing icon + name colored by quality
+  - Hover row → light grey overlay; click row → assigns the item and closes the picker
+  - Tooltip on hover (`SetItemByID`)
+  - "No matching items in your bags." dim text if empty
+  - Picker draggable by its title bar
+- Drag an item from bags onto a zone → still works as the fast-path alternative
 - Click "Clear" removes the item from that zone only (other zone unaffected)
 - Hover over a configured zone shows its tooltip
 
 Also verify migration finalisation: `/dump MountSpeedCharDB.mountItems` — expected: `nil`. `/dump MountSpeedCharDB.sets.mount` — expected: still has your configured items.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
 git add Core.lua UI.lua
-git commit -m "UI: dual-column rows + finalise v1.x → v2.0 migration"
+git commit -m "UI: dual-column rows + SRA-style item picker, finalise v2.0 migration"
 ```
 
 ---
@@ -1076,16 +1267,13 @@ git commit -m "UI: add 'Toggle mount/base gear' keybind via Bindings.xml"
 
 - [ ] **Step 1: Add the two new slash branches**
 
-In `Core.lua`, find the `SlashCmdList["MOUNTSPEED"]` function (around lines 122-151). Add two new `elseif` branches between the `restore` branch and the final `else`:
+In `Core.lua`, find the `SlashCmdList["MOUNTSPEED"]` function (around lines 122-151). The 1.0.1 baseline has these branches: empty/show/toggle, hide, settings/config, reset, then `else` (help). Add two new `elseif` branches between the `reset` branch and the final `else`:
 
 Find:
 
 ```lua
-    elseif msg == "restore" then
-        -- Force-equip base gear (legacy alias for /ms swap when on mount gear).
-        if NS.Swap and NS.Swap.Apply then
-            NS.Swap:Apply("base")
-        end
+    elseif msg == "reset" then
+        StaticPopup_Show("MOUNTSPEED_RESET_ALL")
 
     else
 ```
@@ -1093,11 +1281,8 @@ Find:
 Replace with:
 
 ```lua
-    elseif msg == "restore" then
-        -- Force-equip base gear (legacy alias for /ms swap when on mount gear).
-        if NS.Swap and NS.Swap.Apply then
-            NS.Swap:Apply("base")
-        end
+    elseif msg == "reset" then
+        StaticPopup_Show("MOUNTSPEED_RESET_ALL")
 
     elseif msg == "swap" then
         if NS.Swap and NS.Swap.Toggle then
@@ -1120,7 +1305,6 @@ Still in `Core.lua`, in the same function, find the help block (the lines after 
         print("  /ms            - toggle main window")
         print("  /ms settings   - open settings panel")
         print("  /ms reset      - wipe ALL data (confirm)")
-        print("  /ms restore    - force restore original gear")
     end
 ```
 
@@ -1133,7 +1317,6 @@ Replace with:
         print("  /ms settings   - open settings panel")
         print("  /ms swap       - toggle mount / base gear")
         print("  /ms capture    - save current gear as Base set")
-        print("  /ms restore    - force-equip Base gear")
         print("  /ms reset      - wipe ALL data (confirm)")
     end
 ```
@@ -1150,7 +1333,7 @@ In game: `/reload`
 
 In game:
 - `/ms swap` — expected: gear swaps (same effect as button/keybind)
-- `/ms capture` — expected: current equipment captured into base, chat message confirms; if base already had entries, the confirm popup appears
+- `/ms capture` — expected: current equipment overwrites `sets.base` immediately; chat message confirms. (Note: unlike the **Capture current** button, the slash command does NOT prompt — typing it is taken as explicit intent.)
 - `/ms help` (any unknown arg) — expected: help text now lists the two new commands
 
 - [ ] **Step 5: Commit**
