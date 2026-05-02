@@ -380,6 +380,7 @@ local function CreateMainFrame()
     end)
     captureBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:ClearLines()
         GameTooltip:AddLine("Capture current equipment")
         GameTooltip:AddLine("Saves the items currently in your "
             .. "5 configurable slots into Base gear.", 0.8, 0.8, 0.8, true)
