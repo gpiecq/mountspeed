@@ -104,7 +104,6 @@ frame:SetScript("OnEvent", function(_, event, arg1)
         -- converts the UI to read sets.* directly and finalises this migration
         -- by replacing the alias with a deep copy + dropping mountItems.
         if MountSpeedCharDB.mountItems then
-            MountSpeedCharDB.sets = MountSpeedCharDB.sets or { mount = {}, base = {} }
             MountSpeedCharDB.sets.mount = MountSpeedCharDB.mountItems
             -- migrationNoticeShown stays false → user gets the one-time message
         end
