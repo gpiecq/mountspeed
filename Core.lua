@@ -3,7 +3,7 @@
 -- Addon initialisation, SavedVariables defaults, event bus, slash cmds
 ----------------------------------------------------------------------
 local ADDON_NAME, NS = ...
-NS.version = "1.0.0"
+NS.version = "2.0.0"
 
 ----------------------------------------------------------------------
 -- Default saved-variables template (account-wide)
