@@ -143,10 +143,20 @@ SlashCmdList["MOUNTSPEED"] = function(msg)
     elseif msg == "reset" then
         StaticPopup_Show("MOUNTSPEED_RESET_ALL")
 
+    elseif msg == "swap" then
+        if NS.Swap and NS.Swap.Toggle then
+            NS.Swap:Toggle()
+        end
+
+    elseif msg == "capture" then
+        NS:FireCallback("CAPTURE_BASE_CONFIRMED")
+
     else
         NS:Print("v" .. NS.version .. " commands:")
         print("  /ms            - toggle main window")
         print("  /ms settings   - open settings panel")
+        print("  /ms swap       - toggle mount / base gear")
+        print("  /ms capture    - save current gear as Base set")
         print("  /ms reset      - wipe ALL data (confirm)")
     end
 end
