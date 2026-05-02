@@ -98,13 +98,12 @@ frame:SetScript("OnEvent", function(_, event, arg1)
             MergeDefaults(MountSpeedCharDB, CHAR_DEFAULTS)
         end
 
-        -- Migrate from v1.x schema. We ALIAS sets.mount to the same table as
-        -- mountItems so v1.x UI code (which still reads
-        -- MountSpeedCharDB.mountItems) keeps working through Tasks 1-2. Task 3
-        -- converts the UI to read sets.* directly and finalises this migration
-        -- by replacing the alias with a deep copy + dropping mountItems.
+        -- Migrate from v1.x schema (mountItems → sets.mount, drop savedEquipment)
         if MountSpeedCharDB.mountItems then
-            MountSpeedCharDB.sets.mount = MountSpeedCharDB.mountItems
+            for slotId, itemId in pairs(MountSpeedCharDB.mountItems) do
+                MountSpeedCharDB.sets.mount[slotId] = itemId
+            end
+            MountSpeedCharDB.mountItems = nil
             -- migrationNoticeShown stays false → user gets the one-time message
         end
         MountSpeedCharDB.savedEquipment = nil  -- obsolete in v2.0

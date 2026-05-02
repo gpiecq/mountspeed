@@ -5,6 +5,42 @@
 local _, NS = ...
 
 ----------------------------------------------------------------------
+-- Style (matches SimpleRaidAssign palette for visual coherence)
+----------------------------------------------------------------------
+local COLOURS = {
+    bg        = { 0.08, 0.08, 0.10, 0.95 },
+    panel     = { 0.12, 0.12, 0.14, 0.96 },
+    border    = { 0.30, 0.30, 0.34, 1    },
+    accent    = { 0.00, 0.80, 1.00, 1    },
+    text      = { 1, 1, 1, 1 },
+    dim       = { 0.65, 0.65, 0.70, 1 },
+    rowAlt    = { 1, 1, 1, 0.04 },
+    rowHover  = { 1, 1, 1, 0.10 },
+}
+
+local function SkinFrame(f)
+    if not f.SetBackdrop and BackdropTemplateMixin then
+        Mixin(f, BackdropTemplateMixin)
+    end
+    if f.SetBackdrop then
+        f:SetBackdrop({
+            bgFile   = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = 1,
+        })
+        f:SetBackdropColor(unpack(COLOURS.bg))
+        f:SetBackdropBorderColor(unpack(COLOURS.border))
+    end
+end
+
+local function FS(parent, size, layer)
+    local fs = parent:CreateFontString(nil, layer or "OVERLAY")
+    fs:SetFont("Fonts\\FRIZQT__.TTF", size or 12, "OUTLINE")
+    fs:SetTextColor(unpack(COLOURS.text))
+    return fs
+end
+
+----------------------------------------------------------------------
 -- Constants
 ----------------------------------------------------------------------
 local BACKDROP = {
@@ -15,43 +51,229 @@ local BACKDROP = {
 }
 
 local ROW_HEIGHT    = 32
-local WINDOW_WIDTH  = 350
+local WINDOW_WIDTH  = 520
 local WINDOW_HEIGHT = 100 + (#NS.Slots.ORDER * ROW_HEIGHT) -- header + rows
 
 ----------------------------------------------------------------------
 -- Forward declarations
 ----------------------------------------------------------------------
-local mainFrame, enableCB, rows, dropdown
-local activeSlotId
+local mainFrame, enableCB, rows, itemPicker
+local activeSlotId, activeSetName
 local positionApplied = false
 rows = {}
 
+-- Forward decl so CreateMainFrame can call it
+local OpenItemPicker
+
 ----------------------------------------------------------------------
--- Refresh all 5 slot rows from saved data
+-- SRA-style item picker window (custom dark frame, scrollable rows)
+-- One instance, reused across opens. Anchored at the cursor.
 ----------------------------------------------------------------------
+local PICKER_WIDTH       = 280
+local PICKER_HEIGHT      = 240
+local PICKER_ROW_HEIGHT  = 22
+local PICKER_VISIBLE_ROWS = 9
+
+local function CreateItemPicker()
+    if itemPicker then return itemPicker end
+
+    local f = CreateFrame("Frame", "MountSpeedItemPicker", UIParent,
+                          BackdropTemplateMixin and "BackdropTemplate" or nil)
+    f:SetSize(PICKER_WIDTH, PICKER_HEIGHT)
+    f:SetFrameStrata("DIALOG")
+    f:SetFrameLevel(100)
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:SetClampedToScreen(true)
+    f:Hide()
+    SkinFrame(f)
+    tinsert(UISpecialFrames, "MountSpeedItemPicker")
+
+    -- Title bar (drag region)
+    local titleBar = CreateFrame("Frame", nil, f)
+    titleBar:SetPoint("TOPLEFT", 0, 0)
+    titleBar:SetPoint("TOPRIGHT", 0, 0)
+    titleBar:SetHeight(24)
+    titleBar:EnableMouse(true)
+    titleBar:RegisterForDrag("LeftButton")
+    titleBar:SetScript("OnDragStart", function() f:StartMoving() end)
+    titleBar:SetScript("OnDragStop",  function() f:StopMovingOrSizing() end)
+
+    local title = FS(titleBar, 13)
+    title:SetPoint("LEFT", 10, 0)
+    title:SetTextColor(unpack(COLOURS.accent))
+    f.title = title
+
+    local closeBtn = CreateFrame("Button", nil, titleBar, "UIPanelCloseButton")
+    closeBtn:SetPoint("TOPRIGHT", 2, 2)
+    closeBtn:SetScript("OnClick", function() f:Hide() end)
+
+    -- Scroll frame containing the rows
+    local scroll = CreateFrame("ScrollFrame", "MountSpeedItemPickerScroll", f,
+                               "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 8, -28)
+    scroll:SetPoint("BOTTOMRIGHT", -28, 8)
+    f.scroll = scroll
+
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(PICKER_WIDTH - 36, PICKER_HEIGHT - 36)
+    scroll:SetScrollChild(content)
+    f.content = content
+
+    f.rows = {}
+
+    itemPicker = f
+    return f
+end
+
+----------------------------------------------------------------------
+-- Build / refresh picker rows for the current activeSlotId / activeSetName
+----------------------------------------------------------------------
+local function RefreshPickerRows()
+    local f = itemPicker
+    if not f or not activeSlotId or not activeSetName then return end
+
+    local items = NS.Slots:ScanBagsForSlot(activeSlotId)
+
+    -- Hide all prior rows; we'll re-show / re-create as needed
+    for _, row in ipairs(f.rows) do row:Hide() end
+
+    if #items == 0 then
+        if not f.emptyText then
+            f.emptyText = FS(f.content, 12)
+            f.emptyText:SetPoint("CENTER")
+            f.emptyText:SetTextColor(unpack(COLOURS.dim))
+            f.emptyText:SetText("No matching items in your bags.")
+        end
+        f.emptyText:Show()
+        f.content:SetHeight(60)
+        return
+    end
+    if f.emptyText then f.emptyText:Hide() end
+
+    for i, item in ipairs(items) do
+        local row = f.rows[i]
+        if not row then
+            row = CreateFrame("Button", nil, f.content)
+            row:SetHeight(PICKER_ROW_HEIGHT)
+            row:SetPoint("LEFT", f.content, "LEFT", 0, 0)
+            row:SetPoint("RIGHT", f.content, "RIGHT", 0, 0)
+
+            local bg = row:CreateTexture(nil, "BACKGROUND")
+            bg:SetAllPoints()
+            row.bg = bg
+
+            local icon = row:CreateTexture(nil, "ARTWORK")
+            icon:SetSize(18, 18)
+            icon:SetPoint("LEFT", 4, 0)
+            row.icon = icon
+
+            local name = FS(row, 12)
+            name:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+            name:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+            name:SetJustifyH("LEFT")
+            row.name = name
+
+            row:SetScript("OnEnter", function(self)
+                self.bg:SetColorTexture(unpack(COLOURS.rowHover))
+                if self.itemId then
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    local _, link = GetItemInfo(self.itemId)
+                    if link then GameTooltip:SetHyperlink(link) end
+                    GameTooltip:Show()
+                end
+            end)
+            row:SetScript("OnLeave", function(self)
+                if self.alt then
+                    self.bg:SetColorTexture(unpack(COLOURS.rowAlt))
+                else
+                    self.bg:SetColorTexture(0, 0, 0, 0)
+                end
+                GameTooltip:Hide()
+            end)
+            row:SetScript("OnClick", function(self)
+                NS.charDb.sets[activeSetName][activeSlotId] = self.itemId
+                NS:FireCallback("DATA_UPDATED")
+                f:Hide()
+            end)
+
+            f.rows[i] = row
+        end
+
+        row:SetPoint("TOP", f.content, "TOP", 0, -((i - 1) * PICKER_ROW_HEIGHT))
+        row.itemId = item.itemId
+        row.alt    = (i % 2 == 0)
+        row.icon:SetTexture(item.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+
+        local color = ITEM_QUALITY_COLORS[item.quality or 1] or { r = 1, g = 1, b = 1 }
+        row.name:SetText(item.name)
+        row.name:SetTextColor(color.r, color.g, color.b)
+
+        if row.alt then
+            row.bg:SetColorTexture(unpack(COLOURS.rowAlt))
+        else
+            row.bg:SetColorTexture(0, 0, 0, 0)
+        end
+
+        row:Show()
+    end
+
+    f.content:SetHeight(#items * PICKER_ROW_HEIGHT)
+end
+
+----------------------------------------------------------------------
+-- Open the picker for a given slot/set, anchored at the cursor
+----------------------------------------------------------------------
+function OpenItemPicker(slotId, setName)
+    activeSlotId  = slotId
+    activeSetName = setName
+
+    local f = CreateItemPicker()
+    local slotName = (NS.Slots.byId[slotId] and NS.Slots.byId[slotId].name) or "?"
+    local setLabel = (setName == "mount") and "Mount" or "Base"
+    f.title:SetText(("Select %s item — %s"):format(setLabel, slotName))
+
+    RefreshPickerRows()
+
+    -- Anchor at cursor (clamped to screen by SetClampedToScreen)
+    local x, y = GetCursorPosition()
+    local scale = UIParent:GetEffectiveScale()
+    f:ClearAllPoints()
+    f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale + 8, y / scale - 8)
+    f:Show()
+    f:Raise()
+end
+
+----------------------------------------------------------------------
+-- Refresh helpers
+----------------------------------------------------------------------
+local function RefreshZone(zone, itemId)
+    if itemId then
+        local name, _, quality, _, _, _, _, _, _, icon = GetItemInfo(itemId)
+        zone.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        zone.itemText:SetText(name or "Loading...")
+        if quality and ITEM_QUALITY_COLORS[quality] then
+            local c = ITEM_QUALITY_COLORS[quality]
+            zone.itemText:SetTextColor(c.r, c.g, c.b)
+        else
+            zone.itemText:SetTextColor(1, 1, 1)
+        end
+        zone.setBtn:Hide()
+        zone.clearBtn:Show()
+    else
+        zone.icon:SetTexture(nil)
+        zone.itemText:SetText("--")
+        zone.itemText:SetTextColor(0.5, 0.5, 0.5)
+        zone.setBtn:Show()
+        zone.clearBtn:Hide()
+    end
+end
+
 local function RefreshRows()
     if not mainFrame or not mainFrame:IsShown() then return end
     for _, row in ipairs(rows) do
-        local itemId = NS.charDb.mountItems[row.slotId]
-        if itemId then
-            local name, _, quality, _, _, _, _, _, _, icon = GetItemInfo(itemId)
-            row.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-            row.itemText:SetText(name or "Loading...")
-            if quality and ITEM_QUALITY_COLORS[quality] then
-                local c = ITEM_QUALITY_COLORS[quality]
-                row.itemText:SetTextColor(c.r, c.g, c.b)
-            else
-                row.itemText:SetTextColor(1, 1, 1)
-            end
-            row.setBtn:Hide()
-            row.clearBtn:Show()
-        else
-            row.icon:SetTexture(nil)
-            row.itemText:SetText("--")
-            row.itemText:SetTextColor(0.5, 0.5, 0.5)
-            row.setBtn:Show()
-            row.clearBtn:Hide()
-        end
+        RefreshZone(row.mountZone, NS.charDb.sets.mount[row.slotId])
+        RefreshZone(row.baseZone,  NS.charDb.sets.base[row.slotId])
     end
     if enableCB then
         enableCB:SetChecked(NS.charDb.enabled)
@@ -63,43 +285,6 @@ end
 ----------------------------------------------------------------------
 local function CreateMainFrame()
     if mainFrame then return end
-
-    ----------------------------------------------------------------
-    -- Shared dropdown (one instance, re-initialised per slot click)
-    ----------------------------------------------------------------
-    dropdown = CreateFrame("Frame", "MountSpeedItemDropdown", UIParent,
-                           "UIDropDownMenuTemplate")
-
-    UIDropDownMenu_Initialize(dropdown, function()
-        if not activeSlotId then return end
-        local items = NS.Slots:ScanBagsForSlot(activeSlotId)
-        if #items == 0 then
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = "No items found in bags"
-            info.disabled = true
-            info.notCheckable = true
-            UIDropDownMenu_AddButton(info)
-        else
-            for _, item in ipairs(items) do
-                local info = UIDropDownMenu_CreateInfo()
-                info.text = item.name
-                info.icon = item.icon
-                info.notCheckable = true
-                if item.quality and ITEM_QUALITY_COLORS[item.quality] then
-                    local c = ITEM_QUALITY_COLORS[item.quality]
-                    info.colorCode =
-                        format("|cff%02x%02x%02x",
-                               c.r * 255, c.g * 255, c.b * 255)
-                end
-                info.func = function()
-                    NS.charDb.mountItems[activeSlotId] = item.itemId
-                    NS:FireCallback("DATA_UPDATED")
-                    CloseDropDownMenus()
-                end
-                UIDropDownMenu_AddButton(info)
-            end
-        end
-    end, "MENU")
 
     ----------------------------------------------------------------
     -- Main window
@@ -165,99 +350,82 @@ local function CreateMainFrame()
     header:SetText("Equipment to swap when mounted:")
     header:SetTextColor(0.8, 0.8, 0.8)
 
-    ----------------------------------------------------------------
-    -- Slot rows (5 fixed rows, no scroll)
-    ----------------------------------------------------------------
-    local contentWidth = WINDOW_WIDTH - 24 -- left + right padding
-    for i, slotInfo in ipairs(NS.Slots.ORDER) do
-        local row = CreateFrame("Frame", nil, mainFrame)
-        row:SetSize(contentWidth, ROW_HEIGHT)
-        row:SetPoint("TOPLEFT", 12, -(72 + (i - 1) * ROW_HEIGHT))
-        row.slotId = slotInfo.id
+    -- Column labels for the two zones
+    local mountColLabel = mainFrame:CreateFontString(nil, "OVERLAY",
+                                                     "GameFontNormalSmall")
+    mountColLabel:SetPoint("TOPLEFT", 110, -58)
+    mountColLabel:SetText("Mount gear")
+    mountColLabel:SetTextColor(0.6, 0.9, 1)
 
-        -- Alternating row background
-        if i % 2 == 0 then
-            local bg = row:CreateTexture(nil, "BACKGROUND")
-            bg:SetAllPoints()
-            bg:SetColorTexture(1, 1, 1, 0.03)
-        end
+    local baseColLabel = mainFrame:CreateFontString(nil, "OVERLAY",
+                                                    "GameFontNormalSmall")
+    baseColLabel:SetPoint("TOPLEFT", 290, -58)
+    baseColLabel:SetText("Base gear")
+    baseColLabel:SetTextColor(1, 0.9, 0.6)
 
-        -- Item icon (24x24)
-        local icon = row:CreateTexture(nil, "ARTWORK")
+    ----------------------------------------------------------------
+    -- Helper: build one item zone (icon + name + Set/Clear buttons + drag/drop)
+    ----------------------------------------------------------------
+    local function CreateZone(parent, slotInfo, setName, anchorOffsetX)
+        local zone = CreateFrame("Frame", nil, parent)
+        zone:SetSize(170, ROW_HEIGHT)
+        zone:SetPoint("LEFT", parent, "LEFT", anchorOffsetX, 0)
+        zone.slotId = slotInfo.id
+        zone.setName = setName
+
+        local icon = zone:CreateTexture(nil, "ARTWORK")
         icon:SetSize(24, 24)
         icon:SetPoint("LEFT", 4, 0)
-        row.icon = icon
+        zone.icon = icon
 
-        -- Slot name label
-        local slotLabel = row:CreateFontString(nil, "OVERLAY",
-                                               "GameFontNormalSmall")
-        slotLabel:SetPoint("LEFT", icon, "RIGHT", 6, 0)
-        slotLabel:SetWidth(70)
-        slotLabel:SetJustifyH("LEFT")
-        slotLabel:SetText(slotInfo.name)
-        slotLabel:SetTextColor(0.7, 0.7, 0.7)
-
-        -- Item name
-        local itemText = row:CreateFontString(nil, "OVERLAY",
-                                              "GameFontHighlightSmall")
-        itemText:SetPoint("LEFT", slotLabel, "RIGHT", 4, 0)
-        itemText:SetPoint("RIGHT", row, "RIGHT", -64, 0)
+        local itemText = zone:CreateFontString(nil, "OVERLAY",
+                                               "GameFontHighlightSmall")
+        itemText:SetPoint("LEFT", icon, "RIGHT", 4, 0)
+        itemText:SetPoint("RIGHT", zone, "RIGHT", -50, 0)
         itemText:SetJustifyH("LEFT")
         itemText:SetText("--")
         itemText:SetTextColor(0.5, 0.5, 0.5)
-        row.itemText = itemText
+        zone.itemText = itemText
 
-        -- "Set" button (visible when slot is empty)
-        local setBtn = CreateFrame("Button", nil, row,
-                                   "UIPanelButtonTemplate")
-        setBtn:SetSize(55, 22)
-        setBtn:SetPoint("RIGHT", -4, 0)
+        local setBtn = CreateFrame("Button", nil, zone, "UIPanelButtonTemplate")
+        setBtn:SetSize(45, 22)
+        setBtn:SetPoint("RIGHT", -2, 0)
         setBtn:SetText("Set")
-        setBtn:SetScript("OnClick", function(self)
-            activeSlotId = slotInfo.id
-            ToggleDropDownMenu(1, nil, dropdown, self, 0, 0)
+        setBtn:SetScript("OnClick", function()
+            OpenItemPicker(slotInfo.id, setName)
         end)
-        row.setBtn = setBtn
+        zone.setBtn = setBtn
 
-        -- "Clear" button (visible when slot has an item)
-        local clearBtn = CreateFrame("Button", nil, row,
-                                     "UIPanelButtonTemplate")
-        clearBtn:SetSize(55, 22)
-        clearBtn:SetPoint("RIGHT", -4, 0)
+        local clearBtn = CreateFrame("Button", nil, zone, "UIPanelButtonTemplate")
+        clearBtn:SetSize(45, 22)
+        clearBtn:SetPoint("RIGHT", -2, 0)
         clearBtn:SetText("Clear")
         clearBtn:SetScript("OnClick", function()
-            NS.charDb.mountItems[slotInfo.id] = nil
+            NS.charDb.sets[setName][slotInfo.id] = nil
             NS:FireCallback("DATA_UPDATED")
         end)
         clearBtn:Hide()
-        row.clearBtn = clearBtn
+        zone.clearBtn = clearBtn
 
-        -- Tooltip on hover
-        row:EnableMouse(true)
-        row:SetScript("OnEnter", function(self)
-            local itemId = NS.charDb.mountItems[self.slotId]
+        zone:EnableMouse(true)
+        zone:SetScript("OnEnter", function(self)
+            local itemId = NS.charDb.sets[setName][self.slotId]
             if itemId then
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                 local _, link = GetItemInfo(itemId)
-                if link then
-                    GameTooltip:SetHyperlink(link)
-                end
+                if link then GameTooltip:SetHyperlink(link) end
                 GameTooltip:Show()
             end
         end)
-        row:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
+        zone:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-        -- Drag & drop: accept items from bags
-        row:RegisterForDrag("LeftButton")
-        row:SetScript("OnReceiveDrag", function(self)
-            local infoType, itemId, itemLink = GetCursorInfo()
+        zone:RegisterForDrag("LeftButton")
+        local function HandleDrop(self)
+            local infoType, itemId = GetCursorInfo()
             if infoType == "item" and itemId then
                 local _, _, _, _, _, _, _, _, equipLoc = GetItemInfo(itemId)
-                if equipLoc and
-                   NS.Slots:FitsSlot(equipLoc, self.slotId) then
-                    NS.charDb.mountItems[self.slotId] = itemId
+                if equipLoc and NS.Slots:FitsSlot(equipLoc, self.slotId) then
+                    NS.charDb.sets[setName][self.slotId] = itemId
                     NS:FireCallback("DATA_UPDATED")
                     ClearCursor()
                 else
@@ -266,20 +434,47 @@ local function CreateMainFrame()
                              .. " slot.")
                 end
             end
-        end)
-        row:SetScript("OnMouseUp", function(self)
-            -- Also handle click-to-place (item on cursor)
-            local infoType, itemId = GetCursorInfo()
-            if infoType == "item" and itemId then
-                local _, _, _, _, _, _, _, _, equipLoc = GetItemInfo(itemId)
-                if equipLoc and
-                   NS.Slots:FitsSlot(equipLoc, self.slotId) then
-                    NS.charDb.mountItems[self.slotId] = itemId
-                    NS:FireCallback("DATA_UPDATED")
-                    ClearCursor()
-                end
-            end
-        end)
+        end
+        zone:SetScript("OnReceiveDrag", HandleDrop)
+        zone:SetScript("OnMouseUp", HandleDrop)
+
+        return zone
+    end
+
+    ----------------------------------------------------------------
+    -- Slot rows (5 fixed rows, each with mount + base zones)
+    ----------------------------------------------------------------
+    local contentWidth = WINDOW_WIDTH - 24
+    for i, slotInfo in ipairs(NS.Slots.ORDER) do
+        local row = CreateFrame("Frame", nil, mainFrame)
+        row:SetSize(contentWidth, ROW_HEIGHT)
+        row:SetPoint("TOPLEFT", 12, -(76 + (i - 1) * ROW_HEIGHT))
+        row.slotId = slotInfo.id
+
+        if i % 2 == 0 then
+            local bg = row:CreateTexture(nil, "BACKGROUND")
+            bg:SetAllPoints()
+            bg:SetColorTexture(1, 1, 1, 0.03)
+        end
+
+        local slotLabel = row:CreateFontString(nil, "OVERLAY",
+                                               "GameFontNormalSmall")
+        slotLabel:SetPoint("LEFT", 4, 0)
+        slotLabel:SetWidth(80)
+        slotLabel:SetJustifyH("LEFT")
+        slotLabel:SetText(slotInfo.name)
+        slotLabel:SetTextColor(0.7, 0.7, 0.7)
+
+        row.mountZone = CreateZone(row, slotInfo, "mount", 86)
+        row.baseZone  = CreateZone(row, slotInfo, "base",  86 + 180)
+
+        -- Separator arrow between zones
+        local arrow = row:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        arrow:SetPoint("LEFT", row, "LEFT", 86 + 170, 0)
+        arrow:SetWidth(10)
+        arrow:SetJustifyH("CENTER")
+        arrow:SetText("⇄")
+        arrow:SetTextColor(0.6, 0.6, 0.6)
 
         rows[#rows + 1] = row
     end
