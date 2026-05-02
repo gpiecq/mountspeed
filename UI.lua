@@ -363,6 +363,30 @@ local function CreateMainFrame()
     baseColLabel:SetText("Base gear")
     baseColLabel:SetTextColor(1, 0.9, 0.6)
 
+    -- Capture current gear → sets.base
+    local captureBtn = CreateFrame("Button", nil, mainFrame,
+                                   "UIPanelButtonTemplate")
+    captureBtn:SetSize(140, 22)
+    captureBtn:SetPoint("TOPRIGHT", -12, -56)
+    captureBtn:SetText("Capture current")
+    captureBtn:SetScript("OnClick", function()
+        local hasAny = false
+        for _ in pairs(NS.charDb.sets.base) do hasAny = true; break end
+        if hasAny then
+            StaticPopup_Show("MOUNTSPEED_CAPTURE_OVERWRITE")
+        else
+            NS:FireCallback("CAPTURE_BASE_CONFIRMED")
+        end
+    end)
+    captureBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:AddLine("Capture current equipment")
+        GameTooltip:AddLine("Saves the items currently in your "
+            .. "5 configurable slots into Base gear.", 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    captureBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
     ----------------------------------------------------------------
     -- Helper: build one item zone (icon + name + Set/Clear buttons + drag/drop)
     ----------------------------------------------------------------
@@ -604,4 +628,15 @@ end)
 
 NS:RegisterCallback("DATA_UPDATED", function()
     RefreshRows()
+end)
+
+NS:RegisterCallback("CAPTURE_BASE_CONFIRMED", function()
+    for _, slotInfo in ipairs(NS.Slots.ORDER) do
+        local equipped = GetInventoryItemID("player", slotInfo.id)
+        if equipped and equipped > 0 then
+            NS.charDb.sets.base[slotInfo.id] = equipped
+        end
+    end
+    NS:FireCallback("DATA_UPDATED")
+    NS:Print("Base gear captured from current equipment.")
 end)

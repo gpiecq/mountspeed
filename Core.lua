@@ -173,3 +173,16 @@ StaticPopupDialogs["MOUNTSPEED_RESET_ALL"] = {
     hideOnEscape = true,
     preferredIndex = 3,
 }
+
+StaticPopupDialogs["MOUNTSPEED_CAPTURE_OVERWRITE"] = {
+    text = "Replace your current Base gear with what you're wearing now?",
+    button1 = "Yes, Capture",
+    button2 = "Cancel",
+    OnAccept = function()
+        NS:FireCallback("CAPTURE_BASE_CONFIRMED")
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
