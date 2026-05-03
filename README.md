@@ -48,6 +48,7 @@ A small mount icon appears at center-screen on first install. Drag it anywhere â
 
 - **Click**: toggle between mount and base gear
 - **Visual state**: desaturated icon + gold border = wearing mount gear; full color = wearing base gear
+- **Hide it**: uncheck **Show floating swap button** at the top of the config window â€” the keybind and `/ms swap` keep working
 
 ### Keybind
 
