@@ -28,7 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Floating draggable swap button at center-screen, with a visual state
   indicator (desaturated + gold border = mount gear equipped; full color =
-  base gear equipped). Position is saved account-wide.
+  base gear equipped). Position is saved account-wide. Can be hidden via the
+  **Show floating swap button** checkbox at the top of the config window
+  (keybind and `/ms swap` keep working when hidden).
 - Key binding: **Toggle mount/base gear** (Game Menu → Key Bindings →
   MountSpeed).
 - **Capture current gear** button: fills the Base set in one click from the
