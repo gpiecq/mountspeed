@@ -1,117 +1,131 @@
 ----------------------------------------------------------------------
 -- MountSpeed  -  Swap.lua
--- Mount / dismount detection and equipment swap logic
+-- Equipment set application and mount-state tracking (v2.0)
 ----------------------------------------------------------------------
 local _, NS = ...
 local Swap = {}
 NS.Swap = Swap
 
 local wasMounted     = false
-local pendingRestore = false
+local pendingApply   = nil   -- queued setName while in combat
+local swappedTicker  = nil   -- polls while isMountSwapped, catches flight arrivals
 
 ----------------------------------------------------------------------
--- Save current equipment for configured slots, then equip mount items
+-- A slot is eligible only if BOTH sets have an item for it.
+-- Prevents accidental undressing when only one column is configured.
 ----------------------------------------------------------------------
-function Swap:SaveAndEquip()
-    local mountItems = NS.charDb.mountItems
-    if not mountItems or not next(mountItems) then return end
-
-    -- Guard: if we're already in the swapped state (e.g. aura flicker or
-    -- fast dismount/remount while EquipItemByName is still pending),
-    -- do NOT re-snapshot — that would capture our own mount-speed items
-    -- as the "original gear" and corrupt savedEquipment.
-    if NS.charDb.isMountSwapped then
-        for slotId, itemId in pairs(mountItems) do
-            local current = GetInventoryItemID("player", slotId)
-            if current ~= itemId then
-                EquipItemByName(itemId, slotId)
-            end
-        end
-        return
-    end
-
-    -- Snapshot currently-worn items
-    NS.charDb.savedEquipment = {}
-    for slotId, _ in pairs(mountItems) do
-        local equipped = GetInventoryItemID("player", slotId) or 0
-        -- Defensive: if what's currently worn is already our own mount-speed
-        -- item (manual pre-equip, or a previous restore that didn't finish),
-        -- store 0 so Restore skips this slot instead of "restoring" the
-        -- mount-speed item as the original.
-        if equipped == mountItems[slotId] then
-            NS.charDb.savedEquipment[slotId] = 0
-        else
-            NS.charDb.savedEquipment[slotId] = equipped
-        end
-    end
-
-    -- Equip mount-speed items
-    for slotId, itemId in pairs(mountItems) do
-        local current = GetInventoryItemID("player", slotId)
-        if current ~= itemId then
-            EquipItemByName(itemId, slotId)
-        end
-    end
-
-    NS.charDb.isMountSwapped = true
-    NS:Print("Mount speed gear equipped.")
+local function EligibleSlot(slotId)
+    local s = NS.charDb.sets
+    return s and s.mount[slotId] and s.base[slotId]
 end
 
 ----------------------------------------------------------------------
--- Restore the gear that was worn before mounting
+-- Equip every eligible slot from sets[setName]. Combat-safe.
 ----------------------------------------------------------------------
-function Swap:Restore()
+function Swap:Apply(setName)
+    if setName ~= "mount" and setName ~= "base" then return end
+
     if InCombatLockdown() then
-        pendingRestore = true
-        NS:Print("In combat — gear will be restored when combat ends.")
+        pendingApply = setName
+        NS:Print("In combat — gear swap will run when combat ends.")
         return
     end
 
-    local saved = NS.charDb.savedEquipment
-    if not saved or not next(saved) then return end
+    local set = NS.charDb.sets and NS.charDb.sets[setName]
+    if not set then return end
 
-    for slotId, itemId in pairs(saved) do
-        if itemId and itemId > 0 then
+    local applied = false
+    for slotId, itemId in pairs(set) do
+        if EligibleSlot(slotId) then
             local current = GetInventoryItemID("player", slotId)
             if current ~= itemId then
                 EquipItemByName(itemId, slotId)
+                applied = true
             end
         end
     end
 
-    NS.charDb.savedEquipment = {}
-    NS.charDb.isMountSwapped = false
-    pendingRestore = false
-    NS:Print("Original gear restored.")
+    NS.charDb.isMountSwapped = (setName == "mount")
+    NS:FireCallback("DATA_UPDATED")
+
+    if setName == "mount" then
+        if applied then NS:Print("Mount gear equipped.") end
+        Swap:StartSwappedTicker()
+    else
+        if applied then NS:Print("Base gear equipped.") end
+    end
 end
 
 ----------------------------------------------------------------------
--- Compare mount state and react
+-- Manual toggle: button, keybind, /ms swap
+----------------------------------------------------------------------
+function Swap:Toggle()
+    if NS.charDb.isMountSwapped then
+        Swap:Apply("base")
+    else
+        Swap:Apply("mount")
+    end
+end
+
+----------------------------------------------------------------------
+-- Polling ticker: while isMountSwapped, periodically verify the player
+-- is still mounted or on a taxi. If not (flight arrival with lagged
+-- events), force back to base.
+----------------------------------------------------------------------
+function Swap:StartSwappedTicker()
+    if swappedTicker then return end
+    swappedTicker = C_Timer.NewTicker(1.5, function(self)
+        if not NS.charDb or not NS.charDb.isMountSwapped then
+            self:Cancel()
+            swappedTicker = nil
+            return
+        end
+        if UnitOnTaxi("player") then return end
+        if IsMounted() then return end
+
+        self:Cancel()
+        swappedTicker = nil
+        Swap:Apply("base")
+        wasMounted = false
+    end)
+end
+
+----------------------------------------------------------------------
+-- Auto-swap entry point on mount-state events
 ----------------------------------------------------------------------
 function Swap:CheckMountState()
     if not NS.charDb or not NS.charDb.enabled then return end
+    if UnitOnTaxi("player") then return end
 
     local mounted = IsMounted()
+
+    -- Defensive: state says "mount" but we're not mounted (and not on taxi)
+    if NS.charDb.isMountSwapped and not mounted then
+        Swap:Apply("base")
+        wasMounted = false
+        return
+    end
+
     if mounted and not wasMounted then
-        self:SaveAndEquip()
+        Swap:Apply("mount")
     elseif not mounted and wasMounted then
-        self:Restore()
+        Swap:Apply("base")
     end
     wasMounted = mounted
 end
 
 ----------------------------------------------------------------------
--- Initialise wasMounted on login (handles login/reload while mounted)
+-- Login: initialise wasMounted, recover from stale swap state
 ----------------------------------------------------------------------
 NS:RegisterCallback("PLAYER_LOGIN", function()
     wasMounted = IsMounted()
 
-    -- Recover from a stale swap state (e.g. logout/crash while mounted,
-    -- logged back in unmounted): restore the original gear so we don't
-    -- stay stuck wearing mount-speed items with no event to trigger us.
-    if NS.charDb.isMountSwapped and not wasMounted
-       and NS.charDb.savedEquipment and next(NS.charDb.savedEquipment) then
-        Swap:Restore()
+    if NS.charDb.isMountSwapped and not wasMounted then
+        -- Logged out wearing mount gear, now unmounted: restore base
+        Swap:Apply("base")
+    elseif NS.charDb.isMountSwapped then
+        -- Mid-flight or still mounted: arm the ticker
+        Swap:StartSwappedTicker()
     end
 end)
 
@@ -121,11 +135,16 @@ end)
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("UNIT_AURA")
 frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+frame:RegisterEvent("PLAYER_CONTROL_GAINED")
 
 frame:SetScript("OnEvent", function(_, event, arg1)
     if event == "UNIT_AURA" and arg1 == "player" then
         Swap:CheckMountState()
-    elseif event == "PLAYER_REGEN_ENABLED" and pendingRestore then
-        Swap:Restore()
+    elseif event == "PLAYER_CONTROL_GAINED" then
+        Swap:CheckMountState()
+    elseif event == "PLAYER_REGEN_ENABLED" and pendingApply then
+        local target = pendingApply
+        pendingApply = nil
+        Swap:Apply(target)
     end
 end)

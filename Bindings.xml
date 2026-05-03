@@ -1,0 +1,5 @@
+<Bindings>
+    <Binding name="MOUNTSPEED_TOGGLE" header="MOUNTSPEED">
+        if MountSpeedSwapTrigger then MountSpeedSwapTrigger() end
+    </Binding>
+</Bindings>

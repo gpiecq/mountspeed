@@ -3,23 +3,27 @@
 -- Addon initialisation, SavedVariables defaults, event bus, slash cmds
 ----------------------------------------------------------------------
 local ADDON_NAME, NS = ...
-NS.version = "1.0.0"
+NS.version = "2.0.0"
 
 ----------------------------------------------------------------------
 -- Default saved-variables template (account-wide)
 ----------------------------------------------------------------------
 local DEFAULTS = {
     settings = {
-        windowPos = { point = "CENTER", x = 0, y = 0 },
-        minimapPos = 215,
+        windowPos     = { point = "CENTER", x = 0, y = 0 },
+        minimapPos    = 215,
+        swapButtonPos = { point = "CENTER", x = 0, y = -100 },
     },
 }
 
 local CHAR_DEFAULTS = {
     enabled = true,
-    mountItems = {},
-    savedEquipment = {},
-    isMountSwapped = false,
+    sets = {
+        mount = {},
+        base  = {},
+    },
+    isMountSwapped         = false,
+    migrationNoticeShown   = false,
 }
 
 ----------------------------------------------------------------------
@@ -94,6 +98,16 @@ frame:SetScript("OnEvent", function(_, event, arg1)
             MergeDefaults(MountSpeedCharDB, CHAR_DEFAULTS)
         end
 
+        -- Migrate from v1.x schema (mountItems → sets.mount, drop savedEquipment)
+        if MountSpeedCharDB.mountItems then
+            for slotId, itemId in pairs(MountSpeedCharDB.mountItems) do
+                MountSpeedCharDB.sets.mount[slotId] = itemId
+            end
+            MountSpeedCharDB.mountItems = nil
+            -- migrationNoticeShown stays false → user gets the one-time message
+        end
+        MountSpeedCharDB.savedEquipment = nil  -- obsolete in v2.0
+
         NS.db     = MountSpeedDB
         NS.charDb = MountSpeedCharDB
 
@@ -106,6 +120,29 @@ frame:SetScript("OnEvent", function(_, event, arg1)
     elseif event == "PLAYER_LOGOUT" then
         NS:FireCallback("PLAYER_LOGOUT")
     end
+end)
+
+----------------------------------------------------------------------
+-- One-time migration notice for v1.x → v2.0 upgrades
+----------------------------------------------------------------------
+NS:RegisterCallback("PLAYER_LOGIN", function()
+    if NS.charDb.migrationNoticeShown then return end
+
+    local sets = NS.charDb.sets
+    if not sets then return end
+
+    local hasMount = next(sets.mount) ~= nil
+    local hasBase  = next(sets.base)  ~= nil
+
+    if hasMount and not hasBase then
+        NS:Print("Updated to v" .. NS.version
+            .. ". Open the window (/ms) and configure your "
+            .. "|cffffd200Base gear|r — auto-swap is paused until you do.")
+        NS:Print("Tip: equip your normal gear, then click "
+            .. "|cffffd200Capture current|r to fill it in one click.")
+    end
+
+    NS.charDb.migrationNoticeShown = true
 end)
 
 ----------------------------------------------------------------------
@@ -129,10 +166,20 @@ SlashCmdList["MOUNTSPEED"] = function(msg)
     elseif msg == "reset" then
         StaticPopup_Show("MOUNTSPEED_RESET_ALL")
 
+    elseif msg == "swap" then
+        if NS.Swap and NS.Swap.Toggle then
+            NS.Swap:Toggle()
+        end
+
+    elseif msg == "capture" then
+        NS:FireCallback("CAPTURE_BASE_CONFIRMED")
+
     else
         NS:Print("v" .. NS.version .. " commands:")
         print("  /ms            - toggle main window")
         print("  /ms settings   - open settings panel")
+        print("  /ms swap       - toggle mount / base gear")
+        print("  /ms capture    - save current gear as Base set")
         print("  /ms reset      - wipe ALL data (confirm)")
     end
 end
@@ -153,6 +200,19 @@ StaticPopupDialogs["MOUNTSPEED_RESET_ALL"] = {
         NS.charDb = MountSpeedCharDB
         NS:FireCallback("DATA_UPDATED")
         NS:Print("All data has been reset.")
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["MOUNTSPEED_CAPTURE_OVERWRITE"] = {
+    text = "Replace your current Base gear with what you're wearing now?",
+    button1 = "Yes, Capture",
+    button2 = "Cancel",
+    OnAccept = function()
+        NS:FireCallback("CAPTURE_BASE_CONFIRMED")
     end,
     timeout = 0,
     whileDead = true,

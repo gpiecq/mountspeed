@@ -25,6 +25,7 @@ cp "$TOC_FILE" \
    Slots.lua \
    Swap.lua \
    UI.lua \
+   Bindings.xml \
    "build/$ADDON_NAME/"
 
 # Optional docs (only copy if present so the script works on a fresh checkout)
