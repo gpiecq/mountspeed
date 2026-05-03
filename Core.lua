@@ -10,9 +10,10 @@ NS.version = "2.0.0"
 ----------------------------------------------------------------------
 local DEFAULTS = {
     settings = {
-        windowPos     = { point = "CENTER", x = 0, y = 0 },
-        minimapPos    = 215,
-        swapButtonPos = { point = "CENTER", x = 0, y = -100 },
+        windowPos       = { point = "CENTER", x = 0, y = 0 },
+        minimapPos      = 215,
+        swapButtonPos   = { point = "CENTER", x = 0, y = -100 },
+        showSwapButton  = true,
     },
 }
 

@@ -343,6 +343,20 @@ local function CreateMainFrame()
         NS.charDb.enabled = self:GetChecked() and true or false
     end)
 
+    local floatBtnCB = CreateFrame("CheckButton", "MountSpeedFloatBtnCB",
+                                   mainFrame, "UICheckButtonTemplate")
+    floatBtnCB:SetPoint("LEFT", _G["MountSpeedEnableCBText"], "RIGHT", 12, 0)
+    floatBtnCB:SetChecked(NS.db.settings.showSwapButton ~= false)
+    _G["MountSpeedFloatBtnCBText"]:SetText("Show floating swap button")
+    _G["MountSpeedFloatBtnCBText"]:SetTextColor(1, 1, 1)
+    floatBtnCB:SetScript("OnClick", function(self)
+        local show = self:GetChecked() and true or false
+        NS.db.settings.showSwapButton = show
+        if swapBtn then
+            if show then swapBtn:Show() else swapBtn:Hide() end
+        end
+    end)
+
     -- Section header
     local header = mainFrame:CreateFontString(nil, "OVERLAY",
                                               "GameFontNormal")
@@ -681,6 +695,9 @@ local function CreateSwapButton()
 
     swapBtn = btn
     UpdateSwapBtnVisual()
+    if NS.db and NS.db.settings.showSwapButton == false then
+        btn:Hide()
+    end
 end
 
 ----------------------------------------------------------------------
